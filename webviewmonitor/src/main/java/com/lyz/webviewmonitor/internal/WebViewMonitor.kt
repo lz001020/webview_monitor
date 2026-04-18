@@ -98,8 +98,21 @@ object WebViewMonitor {
     internal fun handleJsReport(webView: WebView, json: String) {
         val state = stateMap[webView] ?: return
         if (state.isDetached) return
+        if (state.firstBridgeTime == 0L) {
+            state.firstBridgeTime = SystemClock.uptimeMillis()
+            if (state.userClickTime > 0L) {
+                state.nativeInteractive = state.firstBridgeTime - state.userClickTime
+            }
+        }
         val metrics = parseMetrics(json, webView, state)
         state.listener?.onMetricsCollected(webView, metrics)
+    }
+
+    internal fun recordH5Ready(webView: WebView) {
+        val state = stateMap[webView] ?: return
+        if (state.h5ReadyTime == 0L) {
+            state.h5ReadyTime = SystemClock.uptimeMillis()
+        }
     }
 
     private fun shouldSample(): Boolean {
@@ -138,6 +151,9 @@ object WebViewMonitor {
             fid = obj.longOrNull("fid"),
             cls = obj.doubleOrNull("cls"),
             tti = obj.longOrNull("tti"),
+            h5ReadyTime = if (state.h5ReadyTime > 0L && state.userClickTime > 0L)
+                state.h5ReadyTime - state.userClickTime else null,
+            nativeInteractive = state.nativeInteractive,
 
             redirect = obj.longOrNull("redirect"),
             dns = obj.longOrNull("dns"),

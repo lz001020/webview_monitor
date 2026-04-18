@@ -21,6 +21,8 @@ data class WebMetrics(
     var fid: Long? = null,
     var cls: Double? = null,
     var tti: Long? = null,
+    var h5ReadyTime: Long? = null,   // 业务口径 TTI，null = H5 未调用 reportReady
+    var nativeInteractive: Long = 0, // Native 代理口径 TTI = 首次 bridge 回调 - userClickTime
 
     // ============== 4. 网络全链路（null = 命中缓存或浏览器不暴露） ==============
     var redirect: Long? = null,
@@ -64,6 +66,8 @@ data class WebMetrics(
         fid?.takeIf { it > 0 }?.let { map["fid"] = it }
         cls?.takeIf { it > 0.0 }?.let { map["cls"] = it }
         tti?.takeIf { it > 0 }?.let { map["tti"] = it }
+        h5ReadyTime?.takeIf { it > 0 }?.let { map["h5ReadyTime"] = it }
+        if (nativeInteractive > 0) map["nativeInteractive"] = nativeInteractive
 
         redirect?.takeIf { it > 0 }?.let { map["redirect"] = it }
         dns?.takeIf { it > 0 }?.let { map["dns"] = it }

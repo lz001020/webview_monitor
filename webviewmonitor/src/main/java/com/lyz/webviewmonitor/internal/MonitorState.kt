@@ -13,5 +13,8 @@ internal data class MonitorState(
     var jsInjected: Boolean = false,
     val jsErrors: MutableList<String> = mutableListOf(),
     var isErrorPage: Boolean = false,
-    var isDetached: Boolean = false
+    var isDetached: Boolean = false,
+    var h5ReadyTime: Long = 0L,
+    var nativeInteractive: Long = 0L,
+    var firstBridgeTime: Long = 0L
 )

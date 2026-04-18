@@ -21,6 +21,7 @@ fun buildPerformanceMonitorJs(enableResourceTiming: Boolean, enablePaintTiming: 
 
     let hasReported = false;
     let intervalId = null;
+    let lastLongTaskEnd = 0;
 
     function collectNavigation() {
         const nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || performance.timing;
@@ -37,6 +38,10 @@ fun buildPerformanceMonitorJs(enableResourceTiming: Boolean, enablePaintTiming: 
         metrics.domContentLoaded = Math.round((nav.domContentLoadedEventEnd || 0) - start);
         metrics.loadEventEnd = Math.round(performance.now());
         metrics.tti = Math.round((nav.domInteractive || 0) - start);
+        // longtask 可用时取 max(domInteractive, 最后一个长任务结束)，更接近标准 TTI
+        if (lastLongTaskEnd > 0) {
+            metrics.tti = Math.round(Math.max(metrics.tti, lastLongTaskEnd));
+        }
 
         Object.keys(metrics).forEach(key => {
             if (typeof metrics[key] === 'number' && metrics[key] < 0) metrics[key] = 0;
@@ -111,6 +116,14 @@ fun buildPerformanceMonitorJs(enableResourceTiming: Boolean, enablePaintTiming: 
                 });
                 metrics.cls = parseFloat(clsValue.toFixed(4));
             }).observe({type: 'layout-shift', buffered: true});
+        } catch(e) {}
+
+        try {
+            new PerformanceObserver(l => {
+                l.getEntries().forEach(e => {
+                    lastLongTaskEnd = Math.max(lastLongTaskEnd, e.startTime + e.duration);
+                });
+            }).observe({type: 'longtask', buffered: true});
         } catch(e) {}
     }
 

@@ -29,4 +29,10 @@ class AndroidJSInterface(
         val webView = webViewRef.get() ?: return
         monitor.recordJsError(webView, error)
     }
+
+    @JavascriptInterface
+    fun reportReady() {
+        val webView = webViewRef.get() ?: return
+        webView.post { monitor.recordH5Ready(webView) }
+    }
 }
