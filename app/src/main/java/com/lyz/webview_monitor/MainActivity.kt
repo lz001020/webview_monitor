@@ -134,7 +134,7 @@ class MainActivity : ComponentActivity(), WebViewMonitorListener {
             settings.domStorageEnabled = true
             
             // 1. 【关键】先设置业务 Client (拦截 Scheme)
-            webViewClient = object : WebViewClient() {
+            val businessClient = object : WebViewClient() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     val url = request.url.toString()
                     if (!url.startsWith("http")) {
@@ -158,9 +158,10 @@ class MainActivity : ComponentActivity(), WebViewMonitorListener {
                     super.onReceivedError(view, request, error)
                 }
             }
+            webViewClient = businessClient
             
-            // 2. 【关键】再进行监控注入。库会自动包装上面的业务 Client
-            WebViewMonitor.attach(this, this@MainActivity)
+            // 2. 【关键】再进行监控注入。低版本拿不到现有 WebViewClient，需要显式传入原始 client。
+            WebViewMonitor.attach(this, this@MainActivity, originalClient = businessClient)
             
             // 3. 记录创建时间
             WebViewMonitor.recordWebViewCreate(this)

@@ -35,4 +35,10 @@ class AndroidJSInterface(
         val webView = webViewRef.get() ?: return
         webView.post { monitor.recordH5Ready(webView) }
     }
+
+    @JavascriptInterface
+    fun reportRouteChange(url: String?) {
+        val webView = webViewRef.get() ?: return
+        webView.post { monitor.recordRouteChange(webView, url) }
+    }
 }

@@ -41,7 +41,8 @@
 ```kotlin
 WebViewMonitor.init(application, WebViewMonitorConfig(
     sampleRate = 1.0f, // 学习环境建议 100% 采样
-    enableResourceTiming = true
+    enableResourceTiming = true,
+    enableSpaRouteMonitoring = true
 ))
 ```
 
@@ -52,7 +53,11 @@ val webView = WebView(this)
 // 1. 记录创建耗时
 WebViewMonitor.recordWebViewCreate(webView)
 
-// 2. 绑定监控
+// 2. 低版本如果有业务 WebViewClient，需要显式传给 SDK 包装
+val businessClient = object : WebViewClient() {}
+webView.webViewClient = businessClient
+
+// 3. 绑定监控
 WebViewMonitor.attach(webView, object : WebViewMonitorListener {
     override fun onMetricsCollected(webView: WebView, metrics: WebMetrics) {
         // 在这里获取所有性能数据
@@ -62,9 +67,9 @@ WebViewMonitor.attach(webView, object : WebViewMonitorListener {
     override fun onError(webView: WebView, error: String) {
         Log.e("WebViewError", error)
     }
-})
+}, originalClient = businessClient)
 
-// 3. 发起加载
+// 4. 发起加载
 WebViewMonitor.recordUserClick(webView) // 记录用户点击起点
 webView.loadUrl("https://github.com")
 ```

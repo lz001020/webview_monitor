@@ -73,11 +73,20 @@ onReceivedSslError
 
 ### JS 注入时机
 
-JS 性能脚本（`PERFORMANCE_MONITOR_JS`）在 **`onPageFinished`** 时注入，而非 `onPageStarted`。原因：
+JS 性能脚本在 **`onPageFinished`** 时注入，而非 `onPageStarted`。原因：
 
 - `onPageStarted` 时新页面 Frame 尚未切换，注入的脚本绑定在旧 window 上，`load` 事件永远不会触发
 - `onPageFinished` 时 DOM 已稳定，`document.readyState === 'complete'`，注入后立即触发 `setTimeout(report, 50)` 兜底上报
 - PerformanceObserver 使用 `buffered: true`，能回溯已经发生的 paint/lcp 事件
+
+### SPA 路由监控
+
+SDK 默认开启 `pushState / replaceState / popstate / hashchange` 监听：
+
+- 首屏加载仍然依赖 `onPageFinished` 注入后上报
+- SPA 软路由不会触发 `onPageFinished`，因此由注入脚本主动监听路由变化并通过 JS Bridge 回调 Native
+- 软路由上报会带 `isSpaRouteChange=true`、`routeChangeCount` 和 `spaRouteDuration`
+- `spaRouteDuration` 口径是“路由变化发生”到“DOM 再次稳定后触发回调”的近似时长，不复用首屏 `Navigation Timing`
 
 ### 线程模型
 
@@ -180,11 +189,33 @@ WebViewMonitor.init(
     cfg = WebViewMonitorConfig(
         enableResourceTiming = true,   // 采集资源详情列表
         enablePaintTiming = true,      // 采集 Paint/LCP/FID/CLS
+        enableSpaRouteMonitoring = true, // 监控 SPA 软路由
         sampleRate = 0.3f,             // 采样率，生产建议 0.1~0.5
         maxResourceCount = 20,         // 资源列表上限，防内存膨胀
     )
 )
 ```
+
+## 低版本 WebViewClient 接入
+
+`API 26` 以下无法从 `WebView` 实例反向取回已设置的 `webViewClient/webChromeClient`，所以如果业务已经先设置了自定义 client，需要显式传给 SDK：
+
+```kotlin
+val businessClient = object : WebViewClient() {
+    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+        return false
+    }
+}
+
+webView.webViewClient = businessClient
+WebViewMonitor.attach(
+    webView = webView,
+    listener = listener,
+    originalClient = businessClient
+)
+```
+
+否则在 Android 8.0 以下，SDK 包装后业务 `shouldOverrideUrlLoading/onReceivedError` 等回调会丢失。
 
 ---
 

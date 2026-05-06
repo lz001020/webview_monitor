@@ -39,6 +39,9 @@ data class WebMetrics(
     var totalLoadTime: Long = 0,        // Native 时钟：nativePageFinish - nativeLoadUrl，始终有值
 
     // ============== 6. 扩展 & 异常 ==============
+    var isSpaRouteChange: Boolean = false,
+    var routeChangeCount: Int = 0,
+    var spaRouteDuration: Long? = null,
     val resourceTimings: List<ResourceTiming> = emptyList(),
     val jsErrors: List<String> = emptyList(),
     var isErrorPage: Boolean = false
@@ -55,6 +58,9 @@ data class WebMetrics(
             "totalLoadTime" to totalLoadTime,
             "isErrorPage" to isErrorPage,
         )
+        if (isSpaRouteChange) map["isSpaRouteChange"] = true
+        if (routeChangeCount > 0) map["routeChangeCount"] = routeChangeCount
+        spaRouteDuration?.takeIf { it > 0 }?.let { map["spaRouteDuration"] = it }
         if (nativeLoadUrl > 0) map["nativeLoadUrl"] = nativeLoadUrl
         if (nativePageStart > 0) map["nativePageStart"] = nativePageStart
         if (nativePageFinish > 0) map["nativePageFinish"] = nativePageFinish

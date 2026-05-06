@@ -3,6 +3,8 @@ package com.lyz.webviewmonitor.internal
 import android.app.Application
 import android.os.Build
 import android.os.SystemClock
+import android.webkit.WebChromeClient
+import android.webkit.WebViewClient
 import android.webkit.WebView
 import com.lyz.webviewmonitor.AndroidJSInterface
 import com.lyz.webviewmonitor.MonitoredWebChromeClient
@@ -28,18 +30,26 @@ object WebViewMonitor {
         // 可扩展：注册 ActivityLifecycleCallbacks 自动 detach
     }
 
-    fun attach(webView: WebView, listener: WebViewMonitorListener? = null) {
+    @JvmOverloads
+    fun attach(
+        webView: WebView,
+        listener: WebViewMonitorListener? = null,
+        originalClient: WebViewClient? = null,
+        originalChrome: WebChromeClient? = null
+    ) {
         if (!shouldSample()) return
 
         val state = MonitorState(listener)
         stateMap[webView] = state
 
-        val originalClient = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) webView.webViewClient else null
+        val resolvedClient = originalClient
+            ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) webView.webViewClient else null
         webView.webViewClient =
-            MonitoredWebViewClient(originalClient, this)
+            MonitoredWebViewClient(resolvedClient, this)
 
-        val originalChrome = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) webView.webChromeClient else null
-        webView.webChromeClient = MonitoredWebChromeClient(originalChrome, this, webView)
+        val resolvedChrome = originalChrome
+            ?: if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) webView.webChromeClient else null
+        webView.webChromeClient = MonitoredWebChromeClient(resolvedChrome, this, webView)
 
         webView.addJavascriptInterface(AndroidJSInterface(webView, this), "WebViewMonitor")
     }
@@ -63,24 +73,58 @@ object WebViewMonitor {
             state.nativePageStart = SystemClock.uptimeMillis()
             if (state.nativeLoadUrl == 0L) state.nativeLoadUrl = state.nativePageStart
             state.jsInjected = false  // 每次新页面导航重置，确保重新注入
+            state.currentUrl = url
+            state.routeChangeCount = 0
+            state.isErrorPage = false
+            state.h5ReadyTime = 0L
+            state.nativeInteractive = 0L
+            state.firstBridgeTime = 0L
+            state.spaNavStart = 0L
+            state.spaNavUrl = null
+            state.jsErrors.clear()
         }
     }
 
     internal fun recordPageFinish(webView: WebView, @Suppress("UNUSED_PARAMETER") url: String?) {
         stateMap[webView]?.let { state ->
             state.nativePageFinish = SystemClock.uptimeMillis()
+            if (!url.isNullOrBlank()) {
+                state.currentUrl = url
+            }
             if (!state.jsInjected) {
                 val cfg = config.get()
                 webView.evaluateJavascript(
                     buildPerformanceMonitorJs(
                         enableResourceTiming = cfg.enableResourceTiming,
                         enablePaintTiming = cfg.enablePaintTiming,
+                        enableSpaRouteMonitoring = cfg.enableSpaRouteMonitoring,
                         maxResourceCount = cfg.maxResourceCount
                     ),
                     null
                 )
                 state.jsInjected = true
             }
+        }
+    }
+
+    internal fun recordRouteChange(webView: WebView, url: String?) {
+        stateMap[webView]?.let { state ->
+            val now = SystemClock.uptimeMillis()
+            state.currentUrl = url
+            state.routeChangeCount += 1
+            state.userClickTime = now
+            state.nativePageStart = now
+            state.nativePageFinish = 0L
+            state.nativeLoadUrl = now
+            state.nativeBlank = 0L
+            state.h5ReadyTime = 0L
+            state.nativeInteractive = 0L
+            state.firstBridgeTime = 0L
+            state.isErrorPage = false
+            state.spaNavStart = now
+            state.spaNavUrl = url
+            state.jsErrors.clear()
+            state.listener?.onSpaNavigate(webView, url ?: webView.url ?: "")
         }
     }
 
@@ -98,6 +142,9 @@ object WebViewMonitor {
     internal fun handleJsReport(webView: WebView, json: String) {
         val state = stateMap[webView] ?: return
         if (state.isDetached) return
+        if (state.routeChangeCount > 0 && state.nativePageFinish == 0L) {
+            state.nativePageFinish = SystemClock.uptimeMillis()
+        }
         if (state.firstBridgeTime == 0L) {
             state.firstBridgeTime = SystemClock.uptimeMillis()
             if (state.userClickTime > 0L) {
@@ -110,8 +157,14 @@ object WebViewMonitor {
 
     internal fun recordH5Ready(webView: WebView) {
         val state = stateMap[webView] ?: return
+        val now = SystemClock.uptimeMillis()
         if (state.h5ReadyTime == 0L) {
-            state.h5ReadyTime = SystemClock.uptimeMillis()
+            state.h5ReadyTime = now
+            if (state.spaNavStart > 0L) {
+                val duration = now - state.spaNavStart
+                state.listener?.onSpaReady(webView, state.spaNavUrl ?: webView.url ?: "", duration)
+                state.spaNavStart = 0L
+            }
         }
     }
 
@@ -137,7 +190,7 @@ object WebViewMonitor {
         state.nativeBlank = nativeBlank
 
         return WebMetrics(
-            url = webView.url ?: "unknown",
+            url = state.currentUrl ?: webView.url ?: "unknown",
             nativeWebViewCreate = state.nativeWebViewCreate,
             nativeLoadUrl = state.nativeLoadUrl,
             nativePageStart = state.nativePageStart,
@@ -168,6 +221,9 @@ object WebViewMonitor {
             totalLoadTime = if (state.nativePageFinish > 0L && state.nativeLoadUrl > 0L)
                 state.nativePageFinish - state.nativeLoadUrl else 0L,
 
+            isSpaRouteChange = state.routeChangeCount > 0,
+            routeChangeCount = state.routeChangeCount,
+            spaRouteDuration = obj.longOrNull("spaRouteDuration"),
             resourceTimings = parseResourceList(obj.optJSONArray("resourceTimings")),
             jsErrors = state.jsErrors.toList(),
             isErrorPage = state.isErrorPage
